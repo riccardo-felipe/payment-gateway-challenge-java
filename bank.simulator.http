@@ -1,0 +1,108 @@
+### Payment gateway — manual requests
+### The simulator decides from the last digit of the card number:
+### odd authorizes, even declines, zero answers 503.
+
+@gateway = http://localhost:8090
+@management = http://localhost:8091
+
+### Authorized — card ends in 7
+POST {{gateway}}/payments
+Content-Type: application/json
+
+{
+  "card_number": "2222405343248877",
+  "expiry_month": 4,
+  "expiry_year": 2030,
+  "currency": "GBP",
+  "amount": 1050,
+  "cvv": "123"
+}
+
+> {%
+  // Captured so the retrieval request below needs no editing. Storage is in memory, so a
+  // hardcoded id would stop resolving the moment the application restarts.
+  client.global.set("paymentId", response.body.id);
+  client.test("payment was authorized", function () {
+    client.assert(response.status === 201);
+    client.assert(response.body.status === "Authorized");
+  });
+%}
+
+### Declined — card ends in 2. Still 201: the payment exists and can be retrieved.
+POST {{gateway}}/payments
+Content-Type: application/json
+
+{
+  "card_number": "2222405343248112",
+  "expiry_month": 4,
+  "expiry_year": 2030,
+  "currency": "GBP",
+  "amount": 1050,
+  "cvv": "123"
+}
+
+> {%
+  client.test("payment was declined", function () {
+    client.assert(response.status === 201);
+    client.assert(response.body.status === "Declined");
+  });
+%}
+
+### Bank unavailable — card ends in 0. 502, not a decline: no verdict was given.
+POST {{gateway}}/payments
+Content-Type: application/json
+
+{
+  "card_number": "2222405343248110",
+  "expiry_month": 4,
+  "expiry_year": 2030,
+  "currency": "GBP",
+  "amount": 1050,
+  "cvv": "123"
+}
+
+### Rejected — invalid card number and cvv. 400, and the bank is never called.
+POST {{gateway}}/payments
+Content-Type: application/json
+
+{
+  "card_number": "123",
+  "expiry_month": 4,
+  "expiry_year": 2030,
+  "currency": "GBP",
+  "amount": 1050,
+  "cvv": "1"
+}
+
+> {%
+  client.test("every invalid field is reported at once", function () {
+    client.assert(response.status === 400);
+    client.assert(response.body.status === "Rejected");
+    client.assert(response.body.errors.length >= 2);
+  });
+%}
+
+### Rejected — expired card. Run this to confirm the expiry rule.
+POST {{gateway}}/payments
+Content-Type: application/json
+
+{
+  "card_number": "2222405343248877",
+  "expiry_month": 1,
+  "expiry_year": 2020,
+  "currency": "GBP",
+  "amount": 1050,
+  "cvv": "123"
+}
+
+### Retrieve the payment authorized above
+GET {{gateway}}/payments/{{paymentId}}
+
+### Not found — a well-formed id that was never issued
+GET {{gateway}}/payments/6a1b3c9e-0000-4000-8000-000000000001
+
+### Health, on the management port
+GET {{management}}/actuator/health
+
+### Metrics in scrape format, including circuit breaker state
+GET {{management}}/actuator/prometheus

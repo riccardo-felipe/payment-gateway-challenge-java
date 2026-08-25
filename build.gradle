@@ -1,27 +1,95 @@
 plugins {
-    id 'java'
-    id 'org.springframework.boot' version '3.1.5'
-    id 'io.spring.dependency-management' version '1.0.15.RELEASE'
+  id 'java'
+  id 'jacoco'
+  id 'org.springframework.boot' version '4.1.0'
+  id 'io.spring.dependency-management' version '1.1.7'
 }
 
 group = 'com.checkout'
 version = '0.0.1-SNAPSHOT'
 
 java {
-    sourceCompatibility = '17'
+  // A toolchain instead of sourceCompatibility: it tells Gradle which JDK to compile with,
+  // rather than assuming the one Gradle itself happens to be running on. Without it the
+  // build depends on whatever JAVA_HOME points at, which is why it works in the IDE and
+  // fails in the terminal.
+  toolchain {
+    languageVersion = JavaLanguageVersion.of(26)
+  }
 }
 
 repositories {
-    mavenCentral()
+  mavenCentral()
 }
 
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.2.0'
+  implementation 'org.springframework.boot:spring-boot-starter-web'
+  implementation 'org.springframework.boot:spring-boot-starter-validation'
+  implementation 'org.springframework.boot:spring-boot-restclient'
+  implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0'
 
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+  implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.4.0'
+  // Binds the circuit breaker registry to Micrometer, so circuit state and call counts
+  // appear under /actuator/metrics without touching any production class.
+  implementation 'io.github.resilience4j:resilience4j-micrometer:2.4.0'
+
+  implementation 'org.springframework.boot:spring-boot-starter-actuator'
+  // Without a scrape-format registry the configured percentiles exist but cannot be
+  // seen: /actuator/metrics returns aggregates only, never the distribution.
+  implementation 'io.micrometer:micrometer-registry-prometheus'
+
+  // Generates metadata so the IDE autocompletes acquiring-bank.* keys in application.yml
+  // and flags typos. No runtime effect.
+  annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+  testImplementation 'org.springframework.boot:spring-boot-starter-test'
+  testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+  testImplementation 'org.springframework.boot:spring-boot-starter-webclient'
+  testImplementation 'org.springframework.boot:spring-boot-resttestclient'
+
+  // Only the end-to-end test needs a real socket: MockRestServiceServer swaps out the
+  // request factory and therefore never exercises connection failures or timeouts.
+  testImplementation 'org.wiremock:wiremock-standalone:3.13.2'
+
+  testImplementation 'com.tngtech.archunit:archunit-junit5:1.5.0'
 }
 
+// Coverage is a diagnostic here, not a target. Only classes with no behaviour of their own
+// are left out - the plain response records. PostPaymentRequest and PaymentResponseStatus
+// stay in the report despite living under dto, because they normalise input, mask sensitive
+// data and parse contract values, and excluding them would hide code that can be wrong.
+def coverageExclusions = [
+    'com/checkout/payment/gateway/PaymentGatewayApplication.class',
+    '**/dto/GetPaymentResponse.class',
+    '**/dto/PostPaymentResponse.class',
+    '**/dto/PaymentRejectedResponse.class',
+    '**/dto/PaymentRejectedResponse$ValidationError.class',
+    '**/config/**',
+    '**/*Config.class',
+    '**/*Properties.class'
+]
+
 tasks.named('test') {
-    useJUnitPlatform()
+  useJUnitPlatform()
+  // Without this the report is built from a stale exec file, or not at all.
+  finalizedBy tasks.jacocoTestReport
+}
+
+tasks.named('jacocoTestReport') {
+  dependsOn tasks.test
+
+  reports {
+    html.required = true
+    xml.required = false
+    csv.required = false
+  }
+
+  // Read straight off the source set rather than through afterEvaluate: the output
+  // directories are already known while this block runs, and afterEvaluate is illegal from
+  // inside a lazy task configuration block anyway.
+  classDirectories.setFrom(
+      files(sourceSets.main.output.classesDirs.collect { dir ->
+        fileTree(dir: dir, exclude: coverageExclusions)
+      })
+  )
 }
