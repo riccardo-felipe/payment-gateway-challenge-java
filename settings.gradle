@@ -1,1 +1,8 @@
+plugins {
+  // Lets Gradle download a matching JDK when the toolchain requested in build.gradle is not
+  // already installed. Without it, a machine without JDK 26 fails with "No matching
+  // toolchains found" instead of resolving the problem on its own.
+  id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
 rootProject.name = 'payment-gateway-challenge-java'

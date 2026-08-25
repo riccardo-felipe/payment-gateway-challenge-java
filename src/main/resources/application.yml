@@ -1,0 +1,59 @@
+server:
+  # The bank simulator already owns 8080, which is Spring Boot's default. Leaving this out
+  # makes the application fail to start once docker-compose is up.
+  port: 8090
+
+acquiring-bank:
+  base-url: http://localhost:8080
+  # Establishing a TCP connection is either fast or hopeless; waiting longer than a couple
+  # of seconds only delays the inevitable failure.
+  connect-timeout: 2s
+  # Generous enough for a real acquirer under load, short enough that a stalled bank cannot
+  # pin a servlet thread for long. Revisit this first if valid authorizations time out.
+  read-timeout: 5s
+
+management:
+  server:
+    # Operational endpoints on their own port, so health and metrics are not reachable from
+    # wherever merchants reach the API. In a deployed environment this port is the one that
+    # stays behind the perimeter.
+    port: 8091
+  endpoints:
+    web:
+      exposure:
+        # Only what is needed. Actuator exposes little by default, but a payment gateway is
+        # not the place to find out that a later version changed its mind.
+        include: health,metrics,prometheus
+  endpoint:
+    health:
+      # Health tells a load balancer whether to send traffic. It should not double as a
+      # description of the internals to anyone who can reach the port.
+      show-details: never
+  metrics:
+    distribution:
+      # Counts and totals cannot answer the question that matters: how close the slowest
+      # calls are to the read timeout. A histogram can, and percentiles are then computed at
+      # query time with histogram_quantile. Client-side percentiles are deliberately not
+      # configured: they cannot be aggregated across instances, so a p99 read from one
+      # replica of a scaled-out gateway would simply be wrong.
+      percentiles-histogram:
+        "[http.client.requests]": true
+      # Bounds the bucket range. Left open, Micrometer emits roughly seventy buckets per tag
+      # combination reaching two hours, which is pure cardinality cost on a call that is
+      # abandoned after five seconds.
+      minimum-expected-value:
+        "[http.client.requests]": 5ms
+      maximum-expected-value:
+        "[http.client.requests]": 10s
+      # Explicit boundaries around the five-second read timeout, so the histogram shows calls
+      # approaching it rather than only the ones that already failed.
+      slo:
+        "[http.client.requests]": 100ms, 250ms, 500ms, 1s, 2s, 4s
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.checkout.payment.gateway: INFO
