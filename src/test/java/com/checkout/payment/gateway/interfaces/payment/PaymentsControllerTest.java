@@ -9,6 +9,7 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -185,6 +186,35 @@ class PaymentsControllerTest {
                       .build())))
           .andExpect(status().isBadRequest())
           .andExpect(jsonPath("$.status").value("Rejected"));
+    }
+
+    /**
+     * A fractional amount must be refused, not rounded. Jackson truncates a float into an int by
+     * default, so "amount": 10.50 would become 10 - and on a field carrying minor currency units
+     * that is the wrong amount charged, returned with a 201 saying it worked. A merchant asking for
+     * GBP 10.50 would take 10 pence and be told it succeeded.
+     */
+    @Test
+    @DisplayName("answers 400 for a fractional amount rather than truncating it")
+    void refusesAFractionalAmount() throws Exception {
+      String bodyWithFractionalAmount = """
+          {
+            "card_number": "2222405343248877",
+            "expiry_month": 12,
+            "expiry_year": 2099,
+            "currency": "GBP",
+            "amount": 10.50,
+            "cvv": "123"
+          }
+          """;
+
+      mockMvc.perform(post("/payments")
+              .contentType(MediaType.APPLICATION_JSON)
+              .content(bodyWithFractionalAmount))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.status").value("Rejected"));
+
+      verifyNoInteractions(paymentService);
     }
 
     /**

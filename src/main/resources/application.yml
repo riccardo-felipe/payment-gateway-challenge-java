@@ -54,6 +54,11 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+spring:
+  jackson:
+    deserialization:
+      accept-float-as-int: false
+
 logging:
   level:
     com.checkout.payment.gateway: INFO
