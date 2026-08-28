@@ -82,7 +82,10 @@ public class PaymentsController {
       @ApiResponse(
           responseCode = "400",
           description = "The request was rejected before reaching the bank. No payment"
-              + " exists. The body lists every invalid field.",
+              + " exists and nothing was charged. The body lists every invalid field. A body"
+              + " that could not be parsed at all - malformed JSON, or a value of the wrong"
+              + " type such as a fractional amount - reports a single error with no field"
+              + " name attached.",
           content = @Content(
               mediaType = MediaType.APPLICATION_JSON_VALUE,
               schema = @Schema(implementation = PaymentRejectedResponse.class))),

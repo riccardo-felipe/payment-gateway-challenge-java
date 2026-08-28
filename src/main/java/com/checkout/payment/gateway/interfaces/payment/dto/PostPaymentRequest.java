@@ -67,11 +67,10 @@ public record PostPaymentRequest(
         message = "currency must be one of GBP, USD, EUR")
     String currency,
 
-    // The field where a misreading costs real money: 1050 is ten pounds fifty, not one
-    // thousand and fifty. Worth spelling out even though the type is obvious.
     @Schema(
-        description = "Amount in the minor currency unit. GBP 10.50 is sent as 1050, and"
-            + " GBP 0.01 as 1.",
+        description = "Amount in the minor currency unit, as a whole number. GBP 10.50 is"
+            + " sent as 1050, and GBP 0.01 as 1. A fractional value such as 10.50 is"
+            + " refused, never rounded: the gateway will not guess which amount was meant.",
         example = "1050",
         minimum = "1",
         requiredMode = Schema.RequiredMode.REQUIRED)
@@ -87,7 +86,6 @@ public record PostPaymentRequest(
     String cvv
 
 ) {
-
   public PostPaymentRequest {
     cardNumber = cardNumber == null ? null : cardNumber.trim();
     cvv = cvv == null ? null : cvv.trim();
